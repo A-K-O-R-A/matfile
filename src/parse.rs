@@ -25,8 +25,8 @@ use std::io::Read;
 
 #[derive(Clone, Debug)]
 pub struct Header {
-    text: String,
-    is_little_endian: bool,
+    pub text: String,
+    pub is_little_endian: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
