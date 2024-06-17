@@ -1,7 +1,7 @@
 use num_traits::{ToBytes, ToPrimitive};
 
 use crate::{
-    parse::{DataElement, DataType, Header},
+    parse::{ArrayFlags, ArrayType, DataElement, DataType, Header},
     MatFile,
 };
 
@@ -53,10 +53,7 @@ impl MatFile {
         // Write MAT-File Data Type
         w.write_all(&(data_type as u32).to_ne_bytes())?;
 
-        let padding_byte_count = match byte_data.len() % 8 {
-            0 => 0,
-            n => 8 - n,
-        };
+        let padding_byte_count = padding_size(byte_data.len());
 
         // Write number of bytes in this data element
         let number_of_bytes = match data_type {
@@ -74,5 +71,112 @@ impl MatFile {
         w.write_all(&(vec![0; padding_byte_count]))?;
 
         Ok(())
+    }
+
+    fn write_sub_element_array_flags<W: Write>(
+        &self,
+        mut w: W,
+        flags: ArrayFlags,
+        array_type: ArrayType,
+    ) -> Result<()> {
+        // Sub element data type
+        w.write_all(&(DataType::UInt32 as u32).to_ne_bytes())?;
+        // Sub element number of bytes
+        w.write_all(&(8 as u32).to_ne_bytes())?;
+
+        let flags = ((flags.complex as u8) << 3)
+            + ((flags.global as u8) << 2)
+            + ((flags.logical as u8) << 1);
+
+        let class = array_type as u8;
+
+        // Figure 1-6
+        w.write_all(&[0, 0, flags, class, 0, 0, 0, 0])?;
+
+        Ok(())
+    }
+
+    fn write_sub_element_dimension<W: Write>(&self, mut w: W, dimensions: &[i32]) -> Result<()> {
+        assert!(dimensions.len() <= 3);
+
+        // Sub element data type
+        w.write_all(&(DataType::Int32 as u32).to_ne_bytes())?;
+
+        // Sub element number of bytes
+        let number_of_bytes = dimensions.len() * 4;
+        w.write_all(&(number_of_bytes as u32).to_ne_bytes())?;
+
+        // Write dimensions
+        for dimension in dimensions {
+            w.write_all(&dimension.to_ne_bytes())?;
+        }
+
+        // Write padding
+        w.write_all(&vec![0; padding_size(number_of_bytes)])?;
+
+        Ok(())
+    }
+
+    fn write_sub_element_array_name<W: Write>(&self, mut w: W, array_name: &str) -> Result<()> {
+        // Sub element data type
+        w.write_all(&(DataType::Int8 as u32).to_ne_bytes())?;
+
+        // Sub element number of bytes
+        let array_name = array_name.as_bytes();
+        let number_of_bytes = array_name.len();
+        w.write_all(&(number_of_bytes as u32).to_ne_bytes())?;
+
+        // Write array name
+        w.write_all(array_name)?;
+
+        // Write padding
+        w.write_all(&vec![0; padding_size(number_of_bytes)])?;
+
+        Ok(())
+    }
+
+    fn write_sub_element_real_part<W: Write>(
+        &self,
+        mut w: W,
+        data_type: DataType,
+        data: &[u8],
+    ) -> Result<()> {
+        // !TODO error handling
+        let size_of_data_type = data_type
+            .byte_size()
+            .expect("Can't use non numerical data type for real part");
+
+        // Sub element data type
+        w.write_all(&(data_type as u32).to_ne_bytes())?;
+
+        // Sub element number of bytes
+        let number_of_bytes = data.len();
+        assert_eq!(data.len() % size_of_data_type, 0);
+        w.write_all(&(number_of_bytes as u32).to_ne_bytes())?;
+
+        // Write real part
+        w.write_all(data)?;
+
+        // Write padding
+        w.write_all(&vec![0; padding_size(number_of_bytes)])?;
+
+        Ok(())
+    }
+
+    // IS there a difference?
+    fn write_sub_element_imaginary_part<W: Write>(
+        &self,
+        mut w: W,
+        data_type: DataType,
+        data: &[u8],
+    ) -> Result<()> {
+        self.write_sub_element_real_part(w, data_type, data)
+    }
+}
+
+fn padding_size(byte_count: usize) -> usize {
+    match byte_count % 8 {
+        0 => 0,
+        n => 8 - n,
     }
 }

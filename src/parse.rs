@@ -216,17 +216,17 @@ pub enum DataType {
     Utf32 = 18,
 }
 
-// impl DataType {
-//     fn byte_size(&self) -> Option<usize> {
-//         match self {
-//             DataType::Int8 | DataType::UInt8 | DataType::Utf8 => Some(1),
-//             DataType::Int16 | DataType::UInt16 | DataType::Utf16 => Some(2),
-//             DataType::Int32 | DataType::UInt32 | DataType::Single | DataType::Utf32 => Some(4),
-//             DataType::Int64 | DataType::UInt64 | DataType::Double => Some(8),
-//             _ => None,
-//         }
-//     }
-// }
+impl DataType {
+    pub fn byte_size(&self) -> Option<usize> {
+        match self {
+            DataType::Int8 | DataType::UInt8 | DataType::Utf8 => Some(1),
+            DataType::Int16 | DataType::UInt16 | DataType::Utf16 => Some(2),
+            DataType::Int32 | DataType::UInt32 | DataType::Single | DataType::Utf32 => Some(4),
+            DataType::Int64 | DataType::UInt64 | DataType::Double => Some(8),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Clone, Copy, Primitive)]
 pub enum ArrayType {
