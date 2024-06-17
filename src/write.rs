@@ -8,18 +8,45 @@ use crate::{
 use std::io::{Result, Write};
 
 impl MatFile {
-    pub fn write<W: Write>(&self, w: W) -> Result<()> {
+    pub fn write<W: Write>(&self, w: &mut W, array_name: &str, nums: &[i32]) -> Result<()> {
         self.write_header(
             w,
             Header {
-                text: "_".to_owned(),
+                text:
+                    "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Mon Jun 17 17:55:27 2024"
+                        .to_owned(),
                 is_little_endian: false,
             },
         )?;
+
+        let mut buf = Vec::new();
+        self.write_sub_element_array_flags(
+            &mut buf,
+            ArrayFlags {
+                complex: false,
+                global: false,
+                logical: false,
+                class: ArrayType::Int32,
+                nzmax: 0,
+            },
+        )?;
+
+        self.write_sub_element_dimension(&mut buf, &[1, 3])?;
+        self.write_sub_element_array_name(&mut buf, array_name)?;
+        let mut bytes: Vec<u8> = Vec::new();
+        for num in nums {
+            bytes.extend(num.to_ne_bytes());
+        }
+        self.write_sub_element_real_part(&mut buf, DataType::Int32, &bytes)?;
+
+        self.write_data_element(w, DataType::Matrix, &buf)?;
+
+        w.flush()?;
+
         Ok(())
     }
 
-    fn write_header<W: Write>(&self, mut w: W, mut header: Header) -> Result<()> {
+    fn write_header<W: Write>(&self, w: &mut W, mut header: Header) -> Result<()> {
         if header.text.len() < 4 {
             header.text = "MATLAB 5.0 MAT-file".to_owned();
         }
@@ -28,13 +55,13 @@ impl MatFile {
         // Wriute description
         w.write_all(text_bytes)?;
         // Ensure proper padding
-        w.write_all(&vec![0; 116 - text_bytes.len()])?;
+        w.write_all(&vec![32; 116 - text_bytes.len()])?;
 
         // Indicate no subsystem specific data
         w.write_all(&vec![0; 8])?;
 
         // Set version to 0x0100
-        w.write_all(&[0x01, 0x00])?;
+        w.write_all(&[0b00000000, 0b00000001])?;
 
         // Write endiannes flag
         // 'M' = 77, 'I' = 73
@@ -46,7 +73,7 @@ impl MatFile {
 
     fn write_data_element<W: Write>(
         &self,
-        mut w: W,
+        w: &mut W,
         data_type: DataType,
         byte_data: &[u8],
     ) -> Result<()> {
@@ -73,30 +100,25 @@ impl MatFile {
         Ok(())
     }
 
-    fn write_sub_element_array_flags<W: Write>(
-        &self,
-        mut w: W,
-        flags: ArrayFlags,
-        array_type: ArrayType,
-    ) -> Result<()> {
+    fn write_sub_element_array_flags<W: Write>(&self, w: &mut W, flags: ArrayFlags) -> Result<()> {
         // Sub element data type
         w.write_all(&(DataType::UInt32 as u32).to_ne_bytes())?;
         // Sub element number of bytes
         w.write_all(&(8 as u32).to_ne_bytes())?;
 
+        let class = flags.class as u8;
         let flags = ((flags.complex as u8) << 3)
             + ((flags.global as u8) << 2)
             + ((flags.logical as u8) << 1);
 
-        let class = array_type as u8;
-
         // Figure 1-6
-        w.write_all(&[0, 0, flags, class, 0, 0, 0, 0])?;
+        //w.write_all(&[0, 0, flags, class, 0, 0, 0, 0])?;
+        w.write_all(&[6, 0, 0, 0, 0, 0, 0, 0])?;
 
         Ok(())
     }
 
-    fn write_sub_element_dimension<W: Write>(&self, mut w: W, dimensions: &[i32]) -> Result<()> {
+    fn write_sub_element_dimension<W: Write>(&self, w: &mut W, dimensions: &[i32]) -> Result<()> {
         assert!(dimensions.len() <= 3);
 
         // Sub element data type
@@ -117,7 +139,7 @@ impl MatFile {
         Ok(())
     }
 
-    fn write_sub_element_array_name<W: Write>(&self, mut w: W, array_name: &str) -> Result<()> {
+    fn write_sub_element_array_name<W: Write>(&self, w: &mut W, array_name: &str) -> Result<()> {
         // Sub element data type
         w.write_all(&(DataType::Int8 as u32).to_ne_bytes())?;
 
@@ -137,7 +159,7 @@ impl MatFile {
 
     fn write_sub_element_real_part<W: Write>(
         &self,
-        mut w: W,
+        w: &mut W,
         data_type: DataType,
         data: &[u8],
     ) -> Result<()> {
@@ -166,7 +188,7 @@ impl MatFile {
     // IS there a difference?
     fn write_sub_element_imaginary_part<W: Write>(
         &self,
-        mut w: W,
+        w: &mut W,
         data_type: DataType,
         data: &[u8],
     ) -> Result<()> {

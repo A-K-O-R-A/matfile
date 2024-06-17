@@ -9,8 +9,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // println!("{:#?}", mat_file);
 
     let write_path = &args[2];
-    let data = std::fs::File::create(write_path)?;
-    mat_file.write(data)?;
+
+    let mut data = std::fs::File::create(write_path)?;
+    mat_file.write(&mut data, "abcde", &[1, 2, 21474836])?;
 
     Ok(())
 }
