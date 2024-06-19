@@ -1,22 +1,16 @@
-use num_traits::{ToBytes, ToPrimitive};
+use num_traits::ToBytes;
 
-use crate::{
-    parse::{ArrayFlags, ArrayType, DataElement, DataType, Header},
-    MatFile,
-};
+use crate::parse::{ArrayFlags, ArrayType, DataType};
 
 use std::io::{Result, Write};
 
-impl MatFile {
+pub struct MatFileWriter;
+
+impl MatFileWriter {
     pub fn write<W: Write>(&self, w: &mut W, array_name: &str, nums: &[i32]) -> Result<()> {
         self.write_header(
             w,
-            Header {
-                text:
-                    "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Mon Jun 17 17:55:27 2024"
-                        .to_owned(),
-                is_little_endian: false,
-            },
+            "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Mon Jun 17 17:55:27 2024",
         )?;
 
         let mut buf = Vec::new();
@@ -31,7 +25,7 @@ impl MatFile {
             },
         )?;
 
-        self.write_sub_element_dimension(&mut buf, &[1, 3])?;
+        self.write_sub_element_dimensions(&mut buf, &[1, 3])?;
         self.write_sub_element_array_name(&mut buf, array_name)?;
         let mut bytes: Vec<u8> = Vec::new();
         for num in nums {
@@ -46,12 +40,12 @@ impl MatFile {
         Ok(())
     }
 
-    fn write_header<W: Write>(&self, w: &mut W, mut header: Header) -> Result<()> {
-        if header.text.len() < 4 {
-            header.text = "MATLAB 5.0 MAT-file".to_owned();
-        }
+    fn write_header<W: Write>(&self, w: &mut W, text: &str) -> Result<()> {
+        let text_bytes = match text.len() {
+            0..=3 => "MATLAB 5.0 MAT-file".as_bytes(),
+            4.. => text.as_bytes(),
+        };
 
-        let text_bytes = header.text.as_bytes();
         // Wriute description
         w.write_all(text_bytes)?;
         // Ensure proper padding
@@ -112,13 +106,13 @@ impl MatFile {
             + ((flags.logical as u8) << 1);
 
         // Figure 1-6
-        //w.write_all(&[0, 0, flags, class, 0, 0, 0, 0])?;
-        w.write_all(&[6, 0, 0, 0, 0, 0, 0, 0])?;
+        w.write_all(&[6, 0, flags, class, 0, 0, 0, 0])?;
+        // w.write_all(&[6, 0, 0, 0, 0, 0, 0, 0])?;
 
         Ok(())
     }
 
-    fn write_sub_element_dimension<W: Write>(&self, w: &mut W, dimensions: &[i32]) -> Result<()> {
+    fn write_sub_element_dimensions<W: Write>(&self, w: &mut W, dimensions: &[i32]) -> Result<()> {
         assert!(dimensions.len() <= 3);
 
         // Sub element data type
@@ -200,5 +194,126 @@ fn padding_size(byte_count: usize) -> usize {
     match byte_count % 8 {
         0 => 0,
         n => 8 - n,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    const REFERENCE: &[u8] = include_bytes!("../tests/small_matrix.mat");
+
+    #[test]
+    fn write_header() {
+        let mut buf = Vec::new();
+
+        let a = MatFileWriter;
+        a.write_header(
+            &mut buf,
+            "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Mon Jun 17 17:55:27 2024",
+        )
+        .expect("Writing into a buffer should not fail");
+
+        // !TODO: This test will fail on big endian systems
+        assert_eq!(&buf[0..128], &REFERENCE[0..128]);
+    }
+
+    #[test]
+    fn write_data_element_tag_matrix() {
+        let mut buf = Vec::new();
+
+        let a = MatFileWriter;
+        // The referecne asset file contains 72 bytes of data
+        a.write_data_element(&mut buf, DataType::Matrix, &[0; 72])
+            .expect("Writing into a buffer should not fail");
+
+        let prev_offset = 128;
+        let byte_length = 8;
+        assert_eq!(
+            &buf[0..byte_length],
+            &REFERENCE[prev_offset..(prev_offset + byte_length)]
+        );
+    }
+
+    #[test]
+    fn write_sub_element_array_flags() {
+        let mut buf = Vec::new();
+
+        let a = MatFileWriter;
+        // The referecne asset file contains 72 bytes of data
+        a.write_sub_element_array_flags(
+            &mut buf,
+            ArrayFlags {
+                class: ArrayType::Int32,
+                complex: false,
+                global: false,
+                logical: false,
+                nzmax: 0,
+            },
+        )
+        .expect("Writing into a buffer should not fail");
+
+        let prev_offset = 136;
+        let byte_length = 16;
+        assert_eq!(
+            &buf[0..byte_length],
+            &REFERENCE[prev_offset..(prev_offset + byte_length)]
+        );
+    }
+
+    #[test]
+    fn write_sub_element_array_dimensions() {
+        let mut buf = Vec::new();
+
+        let a = MatFileWriter;
+        // The referecne asset file contains 72 bytes of data
+        a.write_sub_element_dimensions(&mut buf, &[1, 3])
+            .expect("Writing into a buffer should not fail");
+
+        let prev_offset = 152;
+        let byte_length = 16;
+        assert_eq!(
+            &buf[0..byte_length],
+            &REFERENCE[prev_offset..(prev_offset + byte_length)]
+        );
+    }
+
+    #[test]
+    fn write_sub_element_array_name() {
+        let mut buf = Vec::new();
+
+        let a = MatFileWriter;
+        // The referecne asset file contains 72 bytes of data
+        a.write_sub_element_array_name(&mut buf, "abcde")
+            .expect("Writing into a buffer should not fail");
+
+        let prev_offset = 168;
+        let byte_length = 16;
+        assert_eq!(
+            &buf[0..byte_length],
+            &REFERENCE[prev_offset..(prev_offset + byte_length)]
+        );
+    }
+
+    #[test]
+    fn write_sub_element_real_part() {
+        let mut bytes: Vec<u8> = Vec::new();
+        for num in [1i32, 2, 21474836] {
+            bytes.extend(num.to_ne_bytes());
+        }
+
+        let mut buf = Vec::new();
+
+        let a = MatFileWriter;
+        // The referecne asset file contains 72 bytes of data
+        a.write_sub_element_real_part(&mut buf, DataType::Int32, &bytes)
+            .expect("Writing into a buffer should not fail");
+
+        let prev_offset = 184;
+        let byte_length = 24;
+        assert_eq!(
+            &buf[0..byte_length],
+            &REFERENCE[prev_offset..(prev_offset + byte_length)]
+        );
     }
 }
