@@ -44,7 +44,7 @@ pub enum NumericData {
 }
 
 impl NumericData {
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         match self {
             NumericData::Single(vec) => vec.len(),
             NumericData::Double(vec) => vec.len(),
@@ -59,7 +59,7 @@ impl NumericData {
         }
     }
 
-    fn data_type(&self) -> DataType {
+    pub fn data_type(&self) -> DataType {
         match self {
             NumericData::Single(_) => DataType::Single,
             NumericData::Double(_) => DataType::Double,

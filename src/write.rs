@@ -1,6 +1,6 @@
 use num_traits::ToBytes;
 
-use crate::parse::{ArrayFlags, ArrayType, DataType};
+use crate::parse::{ArrayFlags, ArrayType, DataElement, DataType, NumericData};
 
 use std::io::{Result, Write};
 
@@ -40,7 +40,7 @@ impl MatFileWriter {
         Ok(())
     }
 
-    fn write_header<W: Write>(&self, w: &mut W, text: &str) -> Result<()> {
+    pub fn write_header<W: Write>(&self, w: &mut W, text: &str) -> Result<()> {
         let text_bytes = match text.len() {
             0..=3 => "MATLAB 5.0 MAT-file".as_bytes(),
             4.. => text.as_bytes(),
@@ -61,6 +61,65 @@ impl MatFileWriter {
         // 'M' = 77, 'I' = 73
         let a = (77u16 << 8) + 73;
         w.write_all(&a.to_ne_bytes())?;
+
+        Ok(())
+    }
+
+    pub fn write_matrix<W: Write>(&self, w: &mut W, data_element: DataElement) -> Result<()> {
+        // Calculate size before destructuring
+        // This allows us to write the element tag and data sequentially
+        // Otherwise we would have to seek in the writer or copy all of
+        // the data into a buffer before writing it
+        let calculated_size = data_element.calculate_size();
+        let padding_size = padding_size(calculated_size);
+        let number_of_bytes = match data_element {
+            // Number of bytes following including 64bit padding
+            DataElement::NumericMatrix(..) => calculated_size + padding_size,
+            // Number of bytes following
+            _ => calculated_size,
+        };
+
+        let DataElement::NumericMatrix(
+            array_flags,
+            dimensions,
+            matrix_name,
+            real_part,
+            imaginary_part,
+        ) = data_element
+        else {
+            panic!("unsupported");
+        };
+
+        // Write MAT-File Data Type
+        w.write_all(&(DataType::Matrix as u32).to_ne_bytes())?;
+
+        // Write number of bytes in this data element
+        w.write_all(&(number_of_bytes as u32).to_ne_bytes())?;
+
+        // Write actual data
+        {
+            self.write_sub_element_array_flags(w, array_flags)?;
+
+            self.write_sub_element_dimensions(w, &dimensions)?;
+            self.write_sub_element_array_name(w, &matrix_name)?;
+
+            let real_data_type = real_part.data_type();
+            let real_part_data = real_part.to_ne_bytes();
+            self.write_sub_element_real_part(w, real_data_type, &real_part_data)?;
+
+            if let Some(imaginary_part) = imaginary_part {
+                let imaginary_data_type = imaginary_part.data_type();
+                let imaginary_part_data = imaginary_part.to_ne_bytes();
+                self.write_sub_element_imaginary_part(
+                    w,
+                    imaginary_data_type,
+                    &imaginary_part_data,
+                )?;
+            }
+        }
+
+        // Ensure 64 bit padding
+        w.write_all(&(vec![0; padding_size]))?;
 
         Ok(())
     }
@@ -166,7 +225,7 @@ impl MatFileWriter {
         data: &[u8],
     ) -> Result<()> {
         // !TODO error handling
-        let size_of_data_type = data_type
+        let _size_of_data_type = data_type
             .byte_size()
             .expect("Can't use non numerical data type for real part");
 
@@ -187,7 +246,7 @@ impl MatFileWriter {
         Ok(())
     }
 
-    // IS there a difference?
+    // Is there even a difference?
     fn write_sub_element_imaginary_part<W: Write>(
         &self,
         w: &mut W,
@@ -195,6 +254,81 @@ impl MatFileWriter {
         data: &[u8],
     ) -> Result<()> {
         self.write_sub_element_real_part(w, data_type, data)
+    }
+}
+
+impl NumericData {
+    pub fn to_ne_bytes(self) -> Vec<u8> {
+        // !TODO check soundness of align_to for potential big speed improvement
+        match self {
+            NumericData::Single(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
+            NumericData::Double(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
+            NumericData::Int8(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
+            NumericData::UInt8(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
+            NumericData::Int16(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
+            NumericData::UInt16(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
+            NumericData::Int32(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
+            NumericData::UInt32(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
+            NumericData::Int64(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
+            NumericData::UInt64(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
+        }
+    }
+}
+
+impl DataElement {
+    pub fn calculate_size(&self) -> usize {
+        let DataElement::NumericMatrix(
+            _array_flags,
+            dimensions,
+            matrix_name,
+            real_part,
+            imaginary_part,
+        ) = self
+        else {
+            panic!("Size calculation not yet supported for types other than numeric matrix");
+        };
+
+        let array_flags_size = 8 + 8;
+        let dimensions_size = {
+            let tag_size = 8;
+            let number_of_bytes = dimensions.len() * 4;
+            let padding_size = padding_size(number_of_bytes);
+
+            tag_size + number_of_bytes + padding_size
+        };
+        let matrix_name_size = {
+            let tag_size = 8;
+            let number_of_bytes = matrix_name.as_bytes().len();
+            let padding_size = padding_size(number_of_bytes);
+
+            tag_size + number_of_bytes + padding_size
+        };
+        let real_part_size = {
+            let tag_size = 8;
+            let number_of_bytes = real_part.len()
+                * real_part
+                    .data_type()
+                    .byte_size()
+                    .expect("Unexpected non numeric data type in NumericMatrix");
+            let padding_size = padding_size(number_of_bytes);
+
+            tag_size + number_of_bytes + padding_size
+        };
+        let imaginary_part_size = if let Some(imaginary_part) = imaginary_part {
+            let tag_size = 8;
+            let number_of_bytes = imaginary_part.len()
+                * real_part
+                    .data_type()
+                    .byte_size()
+                    .expect("Unexpected non numeric data type in NumericMatrix");
+            let padding_size = padding_size(number_of_bytes);
+
+            tag_size + number_of_bytes + padding_size
+        } else {
+            0
+        };
+
+        array_flags_size + dimensions_size + matrix_name_size + real_part_size + imaginary_part_size
     }
 }
 
@@ -363,6 +497,42 @@ mod test {
 
         a.write_data_element(&mut buf, DataType::Matrix, &matrix_data_buf)
             .expect("Writing into a buffer should not fail");
+
+        // This helps for better debugging
+        for i in 0..REFERENCE.len() {
+            assert_eq!(buf[i], REFERENCE[i], "Byte {} should match", i)
+        }
+        // assert_eq!(buf, REFERENCE);
+    }
+
+    #[test]
+    fn write_full_file_2() {
+        let mut buf = Vec::new();
+
+        let a = MatFileWriter;
+        a.write_header(
+            &mut buf,
+            "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Mon Jun 17 17:55:27 2024",
+        )
+        .expect("Writing into a buffer should not fail");
+
+        a.write_matrix(
+            &mut buf,
+            DataElement::NumericMatrix(
+                ArrayFlags {
+                    complex: false,
+                    global: false,
+                    logical: false,
+                    class: ArrayType::Double,
+                    nzmax: 0,
+                },
+                vec![1, 3],
+                "abcde".to_owned(),
+                NumericData::Int32(vec![1, 2, 21474836]),
+                None,
+            ),
+        )
+        .expect("Writing into a buffer should not fail");
 
         // This helps for better debugging
         for i in 0..REFERENCE.len() {
