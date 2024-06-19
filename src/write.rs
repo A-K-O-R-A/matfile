@@ -106,8 +106,9 @@ impl MatFileWriter {
             + ((flags.logical as u8) << 1);
 
         // Figure 1-6
+        // The documentation specifies the first two bytes as "undefined"
+        // If the first byte is not set to 6 then MATLAB will refuse to load the file
         w.write_all(&[6, 0, flags, class, 0, 0, 0, 0])?;
-        // w.write_all(&[6, 0, 0, 0, 0, 0, 0, 0])?;
 
         Ok(())
     }
@@ -254,9 +255,20 @@ mod test {
         .expect("Writing into a buffer should not fail");
 
         let prev_offset = 136;
-        let byte_length = 16;
+        let byte_length = 11;
         assert_eq!(
             &buf[0..byte_length],
+            &REFERENCE[prev_offset..(prev_offset + byte_length)]
+        );
+
+        // MATLAB does not set the class flag for some reason
+        assert_ne!(buf[11], REFERENCE[prev_offset + 11]);
+
+        let prev_offset = prev_offset + 11;
+        let byte_length = 4;
+
+        assert_eq!(
+            &buf[12..(12 + byte_length)],
             &REFERENCE[prev_offset..(prev_offset + byte_length)]
         );
     }
