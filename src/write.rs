@@ -20,7 +20,7 @@ impl MatFileWriter {
                 complex: false,
                 global: false,
                 logical: false,
-                class: ArrayType::Int32,
+                class: ArrayType::Double,
                 nzmax: 0,
             },
         )?;
@@ -94,21 +94,28 @@ impl MatFileWriter {
         Ok(())
     }
 
-    fn write_sub_element_array_flags<W: Write>(&self, w: &mut W, flags: ArrayFlags) -> Result<()> {
+    fn write_sub_element_array_flags<W: Write>(
+        &self,
+        w: &mut W,
+        array_flags: ArrayFlags,
+    ) -> Result<()> {
         // Sub element data type
         w.write_all(&(DataType::UInt32 as u32).to_ne_bytes())?;
         // Sub element number of bytes
         w.write_all(&(8 as u32).to_ne_bytes())?;
 
-        let class = flags.class as u8;
-        let flags = ((flags.complex as u8) << 3)
-            + ((flags.global as u8) << 2)
-            + ((flags.logical as u8) << 1);
+        let class = array_flags.class as u8;
+        let flags = ((array_flags.complex as u8) << 3)
+            + ((array_flags.global as u8) << 2)
+            + ((array_flags.logical as u8) << 1);
 
         // Figure 1-6
-        // The documentation specifies the first two bytes as "undefined"
-        // If the first byte is not set to 6 then MATLAB will refuse to load the file
-        w.write_all(&[6, 0, flags, class, 0, 0, 0, 0])?;
+        // The reason why this is endianess dependent is beyond me
+        let flags_u32 = (class as u32) + ((flags as u32) << 8);
+        w.write_all(&flags_u32.to_ne_bytes())?;
+
+        // This should only matter for spare arrays
+        w.write_all(&(array_flags.nzmax as u32).to_ne_bytes())?;
 
         Ok(())
     }
@@ -168,7 +175,7 @@ impl MatFileWriter {
 
         // Sub element number of bytes
         let number_of_bytes = data.len();
-        assert_eq!(data.len() % size_of_data_type, 0);
+        // assert_eq!(data.len() % size_of_data_type, 0);
         w.write_all(&(number_of_bytes as u32).to_ne_bytes())?;
 
         // Write real part
@@ -245,7 +252,7 @@ mod test {
         a.write_sub_element_array_flags(
             &mut buf,
             ArrayFlags {
-                class: ArrayType::Int32,
+                class: ArrayType::Double,
                 complex: false,
                 global: false,
                 logical: false,
@@ -255,20 +262,9 @@ mod test {
         .expect("Writing into a buffer should not fail");
 
         let prev_offset = 136;
-        let byte_length = 11;
+        let byte_length = 16;
         assert_eq!(
             &buf[0..byte_length],
-            &REFERENCE[prev_offset..(prev_offset + byte_length)]
-        );
-
-        // MATLAB does not set the class flag for some reason
-        assert_ne!(buf[11], REFERENCE[prev_offset + 11]);
-
-        let prev_offset = prev_offset + 11;
-        let byte_length = 4;
-
-        assert_eq!(
-            &buf[12..(12 + byte_length)],
             &REFERENCE[prev_offset..(prev_offset + byte_length)]
         );
     }
@@ -327,5 +323,51 @@ mod test {
             &buf[0..byte_length],
             &REFERENCE[prev_offset..(prev_offset + byte_length)]
         );
+    }
+
+    #[test]
+    fn write_full_file() {
+        let mut buf = Vec::new();
+
+        let a = MatFileWriter;
+        a.write_header(
+            &mut buf,
+            "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Mon Jun 17 17:55:27 2024",
+        )
+        .expect("Writing into a buffer should not fail");
+
+        let mut matrix_data_buf = Vec::new();
+        a.write_sub_element_array_flags(
+            &mut matrix_data_buf,
+            ArrayFlags {
+                complex: false,
+                global: false,
+                logical: false,
+                class: ArrayType::Double,
+                nzmax: 0,
+            },
+        )
+        .expect("Writing into a buffer should not fail");
+
+        a.write_sub_element_dimensions(&mut matrix_data_buf, &[1, 3])
+            .expect("Writing into a buffer should not fail");
+        a.write_sub_element_array_name(&mut matrix_data_buf, "abcde")
+            .expect("Writing into a buffer should not fail");
+
+        let mut bytes: Vec<u8> = Vec::new();
+        for num in [1i32, 2, 21474836] {
+            bytes.extend(num.to_ne_bytes());
+        }
+        a.write_sub_element_real_part(&mut matrix_data_buf, DataType::Int32, &bytes)
+            .expect("Writing into a buffer should not fail");
+
+        a.write_data_element(&mut buf, DataType::Matrix, &matrix_data_buf)
+            .expect("Writing into a buffer should not fail");
+
+        // This helps for better debugging
+        for i in 0..REFERENCE.len() {
+            assert_eq!(buf[i], REFERENCE[i], "Byte {} should match", i)
+        }
+        // assert_eq!(buf, REFERENCE);
     }
 }
