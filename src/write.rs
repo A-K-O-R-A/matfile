@@ -46,6 +46,12 @@ impl MatFileWriter {
             4.. => text.as_bytes(),
         };
 
+        if text_bytes.len() > 116 {
+            return Err(std::io::Error::other(
+                "Header length can't be more than 116",
+            ));
+        }
+
         // Wriute description
         w.write_all(text_bytes)?;
         // Ensure proper padding
@@ -261,16 +267,16 @@ impl NumericData {
     pub fn to_ne_bytes(self) -> Vec<u8> {
         // !TODO check soundness of align_to for potential big speed improvement
         match self {
-            NumericData::Single(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
-            NumericData::Double(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
-            NumericData::Int8(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
-            NumericData::UInt8(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
-            NumericData::Int16(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
-            NumericData::UInt16(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
-            NumericData::Int32(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
-            NumericData::UInt32(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
-            NumericData::Int64(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
-            NumericData::UInt64(vec) => vec.into_iter().flat_map(|v| v.to_ne_bytes()).collect(),
+            NumericData::Single(vec) => vec.into_iter().flat_map(f32::to_ne_bytes).collect(),
+            NumericData::Double(vec) => vec.into_iter().flat_map(f64::to_ne_bytes).collect(),
+            NumericData::Int8(vec) => vec.into_iter().flat_map(i8::to_ne_bytes).collect(),
+            NumericData::UInt8(vec) => vec.into_iter().flat_map(u8::to_ne_bytes).collect(),
+            NumericData::Int16(vec) => vec.into_iter().flat_map(i16::to_ne_bytes).collect(),
+            NumericData::UInt16(vec) => vec.into_iter().flat_map(u16::to_ne_bytes).collect(),
+            NumericData::Int32(vec) => vec.into_iter().flat_map(i32::to_ne_bytes).collect(),
+            NumericData::UInt32(vec) => vec.into_iter().flat_map(u32::to_ne_bytes).collect(),
+            NumericData::Int64(vec) => vec.into_iter().flat_map(i64::to_ne_bytes).collect(),
+            NumericData::UInt64(vec) => vec.into_iter().flat_map(u64::to_ne_bytes).collect(),
         }
     }
 }
