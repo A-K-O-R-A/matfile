@@ -11,48 +11,22 @@ use std::io::{Result, Write};
 
 pub struct MatFileWriter<'a, W: Write>(&'a mut W);
 
-impl<'a, W: Write> std::io::Write for MatFileWriter<'a, W> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> Result<()> {
-        self.0.flush()
-    }
-}
-
-/*
-impl<'a, W: Write> std::ops::Deref for MatFileWriter<'a, W> {
-    type Target = &'a mut W;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'a, W: Write> std::ops::DerefMut for MatFileWriter<'a, W> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-*/
-
 impl<'a, W: Write> MatFileWriter<'a, W> {
     pub fn new(w: &'a mut W) -> Result<Self> {
         Self::new_with_description(w, "MATLAB 5.0 MAT-file, Platform: matfile-rs")
     }
 
     pub fn new_with_description(w: &'a mut W, description: &str) -> Result<Self> {
-        let mut matfile = MatFileWriter(w);
+        let matfile = MatFileWriter(w);
 
-        writers::write_header(&mut matfile, description)?;
+        writers::write_header(matfile.0, description)?;
 
         Ok(matfile)
     }
 
     pub fn write_array(
         &mut self,
-        name: &str,
+        array_name: &str,
         real: NumericData,
         imag: Option<NumericData>,
     ) -> Result<()> {
@@ -64,7 +38,19 @@ impl<'a, W: Write> MatFileWriter<'a, W> {
 
         let dim = vec![1i32, real.len() as i32];
 
-        let mut buf = Vec::new();
+        // This should avoid expensive reallocations for big arrays
+        let estimated_size = {
+            use writers::sizes::*;
+            dimensions(dim.len())
+                + name(array_name.bytes().len())
+                + numeric_subelement(real.data_type(), real.len())
+                + match imag {
+                    Some(ref imag) => numeric_subelement(imag.data_type(), imag.len()),
+                    None => 0,
+                }
+        };
+
+        let mut buf = Vec::with_capacity(estimated_size);
         {
             writers::write_sub_element_array_flags(
                 &mut buf,
@@ -78,7 +64,7 @@ impl<'a, W: Write> MatFileWriter<'a, W> {
             )?;
 
             writers::write_sub_element_dimensions(&mut buf, &dim)?;
-            writers::write_sub_element_array_name(&mut buf, &name)?;
+            writers::write_sub_element_array_name(&mut buf, &array_name)?;
 
             writers::write_sub_element_real_part(&mut buf, real.data_type(), &real.to_ne_bytes())?;
 
@@ -91,9 +77,9 @@ impl<'a, W: Write> MatFileWriter<'a, W> {
             }
         }
 
-        writers::write_data_element(self, DataType::Matrix, &buf)?;
+        writers::write_data_element(self.0, DataType::Matrix, &buf)?;
 
-        self.flush()?;
+        self.0.flush()?;
 
         Ok(())
     }

@@ -35,13 +35,12 @@ pub fn write_header<W: Write>(w: &mut W, text: &str) -> Result<()> {
     Ok(())
 }
 
-/*
 pub fn write_matrix<W: Write>(w: &mut W, data_element: DataElement) -> Result<()> {
     // Calculate size before destructuring
     // This allows us to write the element tag and data sequentially
     // Otherwise we would have to seek in the writer or copy all of
     // the data into a buffer before writing it
-    let calculated_size = data_element.calculate_size();
+    let calculated_size = sizes::data_element(&data_element);
     let padding_size = padding_size(calculated_size);
     let number_of_bytes = match data_element {
         // Number of bytes following including 64bit padding
@@ -85,7 +84,6 @@ pub fn write_matrix<W: Write>(w: &mut W, data_element: DataElement) -> Result<()
 
     Ok(())
 }
- */
 
 pub fn write_data_element<W: Write>(
     w: &mut W,
@@ -264,66 +262,65 @@ impl ToBytes for NumericData {
     }
 }
 
-impl DataElement {
-    pub fn calculate_size(&self) -> usize {
+use sizes::padding_size;
+
+pub mod sizes {
+    use crate::parse::{DataElement, DataType};
+
+    pub fn data_element(elm: &DataElement) -> usize {
         let DataElement::NumericMatrix(
             _array_flags,
             dimensions,
             matrix_name,
             real_part,
             imaginary_part,
-        ) = self
+        ) = elm
         else {
             panic!("Size calculation not yet supported for types other than numeric matrix");
         };
 
         let array_flags_size = 8 + 8;
-        let dimensions_size = {
-            let tag_size = 8;
-            let number_of_bytes = dimensions.len() * 4;
-            let padding_size = padding_size(number_of_bytes);
-
-            tag_size + number_of_bytes + padding_size
-        };
-        let matrix_name_size = {
-            let tag_size = 8;
-            let number_of_bytes = matrix_name.as_bytes().len();
-            let padding_size = padding_size(number_of_bytes);
-
-            tag_size + number_of_bytes + padding_size
-        };
-        let real_part_size = {
-            let tag_size = 8;
-            let number_of_bytes = real_part.len()
-                * real_part
-                    .data_type()
-                    .byte_size()
-                    .expect("Unexpected non numeric data type in NumericMatrix");
-            let padding_size = padding_size(number_of_bytes);
-
-            tag_size + number_of_bytes + padding_size
-        };
-        let imaginary_part_size = if let Some(imaginary_part) = imaginary_part {
-            let tag_size = 8;
-            let number_of_bytes = imaginary_part.len()
-                * real_part
-                    .data_type()
-                    .byte_size()
-                    .expect("Unexpected non numeric data type in NumericMatrix");
-            let padding_size = padding_size(number_of_bytes);
-
-            tag_size + number_of_bytes + padding_size
-        } else {
-            0
+        let dimensions_size = self::dimensions(dimensions.len());
+        let matrix_name_size = name(matrix_name.bytes().len());
+        let real_part_size = numeric_subelement(real_part.data_type(), real_part.len());
+        let imaginary_part_size = match imaginary_part {
+            Some(part) => numeric_subelement(part.data_type(), part.len()),
+            None => 0,
         };
 
         array_flags_size + dimensions_size + matrix_name_size + real_part_size + imaginary_part_size
     }
-}
 
-fn padding_size(byte_count: usize) -> usize {
-    match byte_count % 8 {
-        0 => 0,
-        n => 8 - n,
+    pub fn name(byte_count: usize) -> usize {
+        let tag_size = 8;
+        let padding_size = padding_size(byte_count);
+
+        tag_size + byte_count + padding_size
+    }
+
+    pub fn dimensions(dim_count: usize) -> usize {
+        let tag_size = 8;
+        let number_of_bytes = dim_count * 4;
+        let padding_size = padding_size(number_of_bytes);
+
+        tag_size + number_of_bytes + padding_size
+    }
+
+    pub fn numeric_subelement(data_type: DataType, len: usize) -> usize {
+        let tag_size = 8;
+        let number_of_bytes = len
+            * data_type
+                .byte_size()
+                .expect("Unexpected non numeric data type in NumericMatrix");
+        let padding_size = padding_size(number_of_bytes);
+
+        tag_size + number_of_bytes + padding_size
+    }
+
+    pub fn padding_size(byte_count: usize) -> usize {
+        match byte_count % 8 {
+            0 => 0,
+            n => 8 - n,
+        }
     }
 }
