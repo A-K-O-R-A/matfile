@@ -7,8 +7,7 @@ use matfile::{
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut f = std::fs::File::create("output.mat")?;
-    let writer = MatFileWriter;
-    writer.write_header(&mut f, "MATFILE created by matfile")?;
+    let writer = MatFileWriter::new_with_description(&mut f, "MATFILE created by matfile")?;
 
     for i in 0..10 {
         writer.write_matrix(
