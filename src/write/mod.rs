@@ -5,7 +5,7 @@ mod writers;
 
 use num_traits::ToBytes;
 
-use crate::parse::{ArrayFlags, ArrayType, DataType};
+use crate::parse::{ArrayFlags, ArrayType, DataType, NumericData};
 
 use std::io::{Result, Write};
 
@@ -50,38 +50,51 @@ impl<'a, W: Write> MatFileWriter<'a, W> {
         Ok(matfile)
     }
 
-    pub fn example(w: &'a mut W, array_name: &str, nums: &[i32]) -> Result<Self> {
-        let mut matfile = MatFileWriter(w);
+    pub fn write_array(
+        &mut self,
+        name: &str,
+        real: NumericData,
+        imag: Option<NumericData>,
+    ) -> Result<()> {
+        let complex = imag.is_some();
+        if let Some(ref imag) = imag {
+            // !TODO Throw error instead
+            assert_eq!(real.len(), imag.len())
+        }
 
-        writers::write_header(
-            &mut matfile,
-            "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Mon Jun 17 17:55:27 2024",
-        )?;
+        let dim = vec![1i32, real.len() as i32];
 
         let mut buf = Vec::new();
-        writers::write_sub_element_array_flags(
-            &mut buf,
-            ArrayFlags {
-                complex: false,
-                global: false,
-                logical: false,
-                class: ArrayType::Double,
-                nzmax: 0,
-            },
-        )?;
+        {
+            writers::write_sub_element_array_flags(
+                &mut buf,
+                ArrayFlags {
+                    complex,
+                    global: false,
+                    logical: false,
+                    class: ArrayType::Double,
+                    nzmax: 0,
+                },
+            )?;
 
-        writers::write_sub_element_dimensions(&mut buf, &[1, 3])?;
-        writers::write_sub_element_array_name(&mut buf, array_name)?;
-        let mut bytes: Vec<u8> = Vec::new();
-        for num in nums {
-            bytes.extend(num.to_ne_bytes());
+            writers::write_sub_element_dimensions(&mut buf, &dim)?;
+            writers::write_sub_element_array_name(&mut buf, &name)?;
+
+            writers::write_sub_element_real_part(&mut buf, real.data_type(), &real.to_ne_bytes())?;
+
+            if let Some(imag) = imag {
+                writers::write_sub_element_imaginary_part(
+                    &mut buf,
+                    imag.data_type(),
+                    &imag.to_ne_bytes(),
+                )?;
+            }
         }
-        writers::write_sub_element_real_part(&mut buf, DataType::Int32, &bytes)?;
 
-        writers::write_data_element(&mut matfile, DataType::Matrix, &buf)?;
+        writers::write_data_element(self, DataType::Matrix, &buf)?;
 
-        matfile.flush()?;
+        self.flush()?;
 
-        Ok(matfile)
+        Ok(())
     }
 }

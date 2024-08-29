@@ -35,6 +35,7 @@ pub fn write_header<W: Write>(w: &mut W, text: &str) -> Result<()> {
     Ok(())
 }
 
+/*
 pub fn write_matrix<W: Write>(w: &mut W, data_element: DataElement) -> Result<()> {
     // Calculate size before destructuring
     // This allows us to write the element tag and data sequentially
@@ -84,6 +85,7 @@ pub fn write_matrix<W: Write>(w: &mut W, data_element: DataElement) -> Result<()
 
     Ok(())
 }
+ */
 
 pub fn write_data_element<W: Write>(
     w: &mut W,
@@ -210,20 +212,54 @@ pub fn write_sub_element_imaginary_part<W: Write>(
     write_sub_element_real_part(w, data_type, data)
 }
 
-impl NumericData {
-    pub fn to_ne_bytes(self) -> Vec<u8> {
+impl ToBytes for NumericData {
+    type Bytes = Vec<u8>;
+
+    fn to_ne_bytes(&self) -> Vec<u8> {
         // !TODO check soundness of align_to for potential big speed improvement
         match self {
-            NumericData::Single(vec) => vec.into_iter().flat_map(f32::to_ne_bytes).collect(),
-            NumericData::Double(vec) => vec.into_iter().flat_map(f64::to_ne_bytes).collect(),
-            NumericData::Int8(vec) => vec.into_iter().flat_map(i8::to_ne_bytes).collect(),
-            NumericData::UInt8(vec) => vec.into_iter().flat_map(u8::to_ne_bytes).collect(),
-            NumericData::Int16(vec) => vec.into_iter().flat_map(i16::to_ne_bytes).collect(),
-            NumericData::UInt16(vec) => vec.into_iter().flat_map(u16::to_ne_bytes).collect(),
-            NumericData::Int32(vec) => vec.into_iter().flat_map(i32::to_ne_bytes).collect(),
-            NumericData::UInt32(vec) => vec.into_iter().flat_map(u32::to_ne_bytes).collect(),
-            NumericData::Int64(vec) => vec.into_iter().flat_map(i64::to_ne_bytes).collect(),
-            NumericData::UInt64(vec) => vec.into_iter().flat_map(u64::to_ne_bytes).collect(),
+            NumericData::Single(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Double(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int8(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt8(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int16(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt16(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int32(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt32(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int64(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt64(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+        }
+    }
+
+    fn to_be_bytes(&self) -> Vec<u8> {
+        // !TODO check soundness of align_to for potential big speed improvement
+        match self {
+            NumericData::Single(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Double(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int8(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt8(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int16(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt16(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int32(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt32(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int64(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt64(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+        }
+    }
+
+    fn to_le_bytes(&self) -> Vec<u8> {
+        // !TODO check soundness of align_to for potential big speed improvement
+        match self {
+            NumericData::Single(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Double(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int8(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt8(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int16(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt16(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int32(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt32(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::Int64(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
+            NumericData::UInt64(vec) => vec.into_iter().flat_map(|&n| n.to_ne_bytes()).collect(),
         }
     }
 }
